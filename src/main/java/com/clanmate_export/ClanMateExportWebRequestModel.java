@@ -24,26 +24,26 @@
  */
 package com.clanmate_export;
 
-import lombok.AllArgsConstructor;
-
-@AllArgsConstructor
-public enum ClanMateExportDataFormat {
+import java.util.List;
 
 
-    /**
-     * Represent clan extract data in JSON format
-     */
-    JSON("JSON"),
+/**
+ * This class is used only to create a json object with clan name and clan members
+ */
+public class ClanMateExportWebRequestModel {
 
     /**
-     * Represent clan extract data in CSV format
+     * The name of the clan
      */
-    CSV("CSV");
+    private String clanName;
 
-    private final String name;
+    /**
+     * List of clan members
+     */
+    private List<ClanMemberMap> clanMemberMaps;
 
-    @Override
-    public String toString() {
-        return name;
+    public ClanMateExportWebRequestModel(String clanName, List<ClanMemberMap> clanMateExportWebRequestModels){
+        this.clanName = clanName;
+        this.clanMemberMaps =clanMateExportWebRequestModels;
     }
 }
