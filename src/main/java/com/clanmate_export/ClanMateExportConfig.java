@@ -39,7 +39,7 @@ public interface ClanMateExportConfig extends Config
 			position = 0,
 			keyName = "dataInputFormat",
 			name = "Clanmates Export Format",
-			description = "The format of your clan mates export"
+			description = "The format of your clan mates"
 	)
 	default ClanMateExportDataFormat getDataExportFormat() {
 		return ClanMateExportDataFormat.CSV;
@@ -49,7 +49,7 @@ public interface ClanMateExportConfig extends Config
 			position = 1,
 			keyName = "exportToClipBoard",
 			name = "Export to clipboard",
-			description = "When viewing clan members list in settings copy info to clipboard."
+			description = "When viewing clan members list in settings, copy info to clipboard."
 	)
 	default boolean exportToClipBoard() {
 		return true;
@@ -59,7 +59,7 @@ public interface ClanMateExportConfig extends Config
 			position = 1,
 			keyName = "exportUserNamesOnly",
 			name = "Export Usernames only",
-			description = "Exports only usernames and not rank or joined date"
+			description = "Exports only usernames and not rank or joined date. Only works with csv and clipboard"
 	)
 	default boolean getExportUserNamesOnly() {
 		return false;
