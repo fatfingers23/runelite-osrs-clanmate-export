@@ -76,19 +76,10 @@ public class ClanMateExportPlugin extends Plugin {
 
 
     /**
-     * Whether the config URI for the clan roster is loaded and valid
-     */
-    private boolean isClanRosterCorrupt = true;
-
-    /**
      * The clan members, scraped from your clan setup widget
      */
     private List<ClanMemberMap> clanMembers = null;
 
-    /**
-     * Whether the clan setup widget is visible
-     */
-    private boolean isClanSetupWidgetAvailable = false;
 
     /**
      * The number of runescape players in a clan
@@ -106,20 +97,6 @@ public class ClanMateExportPlugin extends Plugin {
     public @Nullable
     List<ClanMemberMap> getClanMembers() {
         return this.clanMembers;
-    }
-
-    /**
-     * @return the client
-     */
-    public Client getClient() {
-        return this.client;
-    }
-
-    /**
-     * @return whether the clan roster is corrupt
-     */
-    public boolean isClanRosterCorrupt() {
-        return this.isClanRosterCorrupt;
     }
 
 
@@ -150,7 +127,6 @@ public class ClanMateExportPlugin extends Plugin {
         if (widget.getGroupId() == 693) {
             if (this.client.getWidget(693, 9) == null) {
                 this.clanMembers = null;
-                this.isClanSetupWidgetAvailable = false;
             } else {
                 scrapeMembers();
             }
