@@ -28,6 +28,7 @@ package com.clanmate_export;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
 
+import java.util.Collection;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 
@@ -236,11 +237,10 @@ public class ClanMateExportPlugin extends Plugin {
         StringBuilder sb = new StringBuilder();
 
         for (ClanMemberMap clanMember : clanMemberMaps) {
-
             sb.append(clanMember.getRSN()).append(",");
             if (!this.config.getExportUserNamesOnly()) {
                 sb.append(clanMember.getRank()).append(",");
-                sb.append(clanMember.getJoinedDate()).append(",");
+                sb.append(clanMember.getJoinedDate());
             }
 
             sb.append("\n");
