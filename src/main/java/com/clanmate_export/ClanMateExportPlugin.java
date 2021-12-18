@@ -82,16 +82,6 @@ public class ClanMateExportPlugin extends Plugin {
 
 
     /**
-     * The number of runescape players in a clan
-     */
-    private int clanMemberCount;
-
-    /**
-     * Name of the runescape clan
-     */
-    private String clanName;
-
-    /**
      * @return the clan members from the clan roster widget
      */
     public @Nullable
@@ -135,38 +125,10 @@ public class ClanMateExportPlugin extends Plugin {
 
     @Subscribe
     public void onGameTick(GameTick gameTick) {
-        //Update the overlay if the clan setup widget is visible on screen
-        if (this.client.getWidget(707, 0) != null) {
-            this.setClanInfo();
-        }
-
         if (this.client.getWidget(690, 0) == null) {
             if(this.client.getWidget(693, 0) == null){
                 overlay.update(ClanMateExportOverlay.WhatToShow.REMOVE);
             }
-        }
-    }
-
-    /**
-     * Sets clan info
-     */
-    private void setClanInfo() {
-        //Gets and sets clan count
-        Widget memberCounterWidget = this.client.getWidget(701, 3);
-        if (memberCounterWidget != null) {
-            if (memberCounterWidget.getText() != null) {
-                String clanSizeText = Text.removeTags(memberCounterWidget.getText());
-                if (clanSizeText.contains("Size:")) {
-                    this.clanMemberCount = Integer.parseInt(clanSizeText.replace("Size: ", ""));
-                }
-
-
-            }
-        }
-        //Gets and sets clan name
-        Widget clanNameWidget = this.client.getWidget(701, 1);
-        if (clanNameWidget != null) {
-            this.clanName = Text.removeTags(clanNameWidget.getText());
         }
     }
 
@@ -226,7 +188,8 @@ public class ClanMateExportPlugin extends Plugin {
             }
             boolean inBounds = (valueOfRsnToGet >= 0) && (valueOfRsnToGet < clanMemberNamesWidgetValues.length);
             if (inBounds) {
-                int otherColumnsIndex = otherColumnsPositions + this.clanMemberCount;
+				int clanMemberCount = Objects.requireNonNull(this.client.getClanSettings()).getMembers().size();
+                int otherColumnsIndex = otherColumnsPositions + clanMemberCount;
                 String rsn = Text.removeTags(clanMemberNamesWidgetValues[valueOfRsnToGet].getText());
                 String rank = Text.removeTags(rankWidgetValues[otherColumnsIndex].getText());
                 String joinedDate = Text.removeTags(joinedWidgetValues[otherColumnsIndex].getText());
@@ -304,7 +267,8 @@ public class ClanMateExportPlugin extends Plugin {
     private void sendClanMembersToUrl() {
 
         try {
-            ClanMateExportWebRequestModel webRequestModel = new ClanMateExportWebRequestModel(this.clanName, this.clanMembers);
+			String clanName = Objects.requireNonNull(this.client.getClanSettings()).getName();
+            ClanMateExportWebRequestModel webRequestModel = new ClanMateExportWebRequestModel(clanName, this.clanMembers);
 
             final Request request = new Request.Builder()
                     .post(RequestBody.create(JSON, GSON.toJson(webRequestModel)))
