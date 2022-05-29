@@ -56,7 +56,17 @@ public interface ClanMateExportConfig extends Config
 	}
 
 	@ConfigItem(
-			position = 1,
+		position = 2,
+		keyName = "showHelperText",
+		name = "Show Helper Text",
+		description = "Turns off that pesky helper test that shows up."
+	)
+	default boolean getShowHelperText() {
+		return true;
+	}
+
+	@ConfigItem(
+			position = 3,
 			keyName = "exportUserNamesOnly",
 			name = "Export Usernames only",
 			description = "Exports only usernames and not rank or joined date. Only works with csv and clipboard"
@@ -66,7 +76,7 @@ public interface ClanMateExportConfig extends Config
 	}
 
 	@ConfigItem(
-			position = 2,
+			position = 4,
 			keyName = "updateWebRequest",
 			name = "Send export to a URL.",
 			description = "When viewing a clan members list can send to the listed url"
@@ -76,7 +86,7 @@ public interface ClanMateExportConfig extends Config
 	}
 
 	@ConfigItem(
-			position = 3,
+			position = 5,
 			keyName = "dataInputUrl",
 			name = "URL to send Clan member export to.",
 			description = ""

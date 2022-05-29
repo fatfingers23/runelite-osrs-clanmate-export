@@ -28,20 +28,17 @@ package com.clanmate_export;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
 
-import java.util.Collection;
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.events.GameTick;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.Text;
 import net.runelite.http.api.RuneLiteAPI;
 import okhttp3.*;
@@ -58,244 +55,268 @@ import static net.runelite.http.api.RuneLiteAPI.JSON;
 
 @Slf4j
 @PluginDescriptor(
-        name = "Clanmate Export"
+	name = "Clanmate Export"
 )
-public class ClanMateExportPlugin extends Plugin {
-    @Inject
-    private Client client;
+public class ClanMateExportPlugin extends Plugin
+{
+	@Inject
+	private Client client;
+	@Inject
+	private ClanMateExportConfig config;
+	@Inject
+	private ClanMateExportChatMenuManager clanMateExportChatMenuManager;
+	@Inject
+	private OkHttpClient webClient;
+	private static final Gson GSON = RuneLiteAPI.GSON;
 
-    @Inject
-    private ClanMateExportConfig config;
+	private static final int CLAN_SETTINGS_INFO_PAGE_WIDGET = 690;
 
-    @Inject
-    private OverlayManager overlayManager;
-
-    @Inject
-    private ClanMateExportOverlay overlay;
-
-    private static final Gson GSON = RuneLiteAPI.GSON;
-
-
-    /**
-     * The clan members, scraped from your clan setup widget
-     */
-    private List<ClanMemberMap> clanMembers = null;
-
-
-    /**
-     * @return the clan members from the clan roster widget
-     */
-    public @Nullable
-    List<ClanMemberMap> getClanMembers() {
-        return this.clanMembers;
-    }
+	private static final int CLAN_SETTINGS_MEMBERS_PAGE_WIDGET_ID = 693;
+	private static final int CLAN_SETTINGS_MEMBERS_LIST_RSN_COLUMN = WidgetInfo.PACK(CLAN_SETTINGS_MEMBERS_PAGE_WIDGET_ID, 10);
+	private static final int CLAN_SETTINGS_MEMBERS_LIST_FIRST_COLUMN = WidgetInfo.PACK(CLAN_SETTINGS_MEMBERS_PAGE_WIDGET_ID, 11);
+	private static final int CLAN_SETTINGS_MEMBERS_LIST_SECOND_COLUMN = WidgetInfo.PACK(CLAN_SETTINGS_MEMBERS_PAGE_WIDGET_ID, 13);
+	private static final int CLAN_SETTINGS_MEMBERS_LIST_FIRST_DROP_DOWN = WidgetInfo.PACK(CLAN_SETTINGS_MEMBERS_PAGE_WIDGET_ID, 7);
+	private static final int CLAN_SETTINGS_MEMBERS_LIST_SECOND_DROP_DOWN = WidgetInfo.PACK(CLAN_SETTINGS_MEMBERS_PAGE_WIDGET_ID, 8);
 
 
-    @Override
-    protected void startUp() throws Exception {
-        overlayManager.add(overlay);
-    }
+	/**
+	 * The clan members, scraped from your clan setup widget
+	 */
+	private List<ClanMemberMap> clanMembers = null;
 
-    @Override
-    protected void shutDown() throws Exception {
-        overlayManager.remove(overlay);
-    }
+	@Provides
+	ClanMateExportConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(ClanMateExportConfig.class);
+	}
 
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded widget)
+	{
 
-    @Provides
-    ClanMateExportConfig provideConfig(ConfigManager configManager) {
-        return configManager.getConfig(ClanMateExportConfig.class);
-    }
+		if (widget.getGroupId() == CLAN_SETTINGS_INFO_PAGE_WIDGET && config.getShowHelperText())
+		{
 
-    @Subscribe
-    public void onWidgetLoaded(WidgetLoaded widget) {
+			clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.OPEN_MEMBERS_SCREEN);
+		}
 
-        if (widget.getGroupId() == 690) {
-            overlay.update(ClanMateExportOverlay.WhatToShow.OPEN_MEMBERS_SCREEN);
-        }
+		if (widget.getGroupId() == CLAN_SETTINGS_MEMBERS_PAGE_WIDGET_ID)
+		{
+			if (this.client.getWidget(693, 9) == null)
+			{
+				this.clanMembers = null;
+			}
+			else
+			{
+				clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.SHOW_EXPORT_OPTIONS);
+			}
+		}
+	}
 
-        //693 is the member list group inside of clan settings
-        if (widget.getGroupId() == 693) {
-            if (this.client.getWidget(693, 9) == null) {
-                this.clanMembers = null;
-            } else {
-                scrapeMembers();
-            }
-        }
-    }
+	/**
+	 * Subroutine - Update our memory of clan members and their ranks for
+	 * clan setup
+	 */
+	public void scrapeMembers()
+	{
+		if (this.clanMembers == null)
+		{
+			this.clanMembers = new ArrayList<>();
+		}
+		this.clanMembers.clear();
 
-    @Subscribe
-    public void onGameTick(GameTick gameTick) {
-        if (this.client.getWidget(690, 0) == null) {
-            if(this.client.getWidget(693, 0) == null){
-                overlay.update(ClanMateExportOverlay.WhatToShow.REMOVE);
-            }
-        }
-    }
+		//Checks to set up scraping
+		Widget clanMemberNamesWidget = this.client.getWidget(CLAN_SETTINGS_MEMBERS_LIST_RSN_COLUMN);
+		Widget rankWidget = this.client.getWidget(CLAN_SETTINGS_MEMBERS_LIST_FIRST_COLUMN);
+		Widget joinedWidget = this.client.getWidget(CLAN_SETTINGS_MEMBERS_LIST_SECOND_COLUMN);
 
-    /**
-     * Subroutine - Update our memory of clan members and their ranks for
-     * clan setup
-     */
-    public void scrapeMembers() {
-        if (this.clanMembers == null) {
-            this.clanMembers = new ArrayList<>();
-        }
-        this.clanMembers.clear();
+		//Checks to make sure drop downs are in correct location
+		Widget[] leftColumnName = Objects.requireNonNull(this.client.getWidget(CLAN_SETTINGS_MEMBERS_LIST_FIRST_DROP_DOWN)).getChildren();
+		if (leftColumnName != null)
+		{
+			if (!leftColumnName[4].getText().equals("Rank"))
+			{
+				clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.CHECK_COLUMNS_RANKED);
+				return;
+			}
+		}
 
-        //Checks to set up scraping
-        Widget clanMemberNamesWidget = this.client.getWidget(693, 10);
-        Widget rankWidget = this.client.getWidget(693, 11);
-        Widget joinedWidget = this.client.getWidget(693, 13);
+		Widget[] rightColumnName = Objects.requireNonNull(this.client.getWidget(CLAN_SETTINGS_MEMBERS_LIST_SECOND_DROP_DOWN)).getChildren();
 
-        Widget[] leftColumnName = Objects.requireNonNull(this.client.getWidget(693, 7)).getChildren();
-        if (leftColumnName != null) {
-            if (!leftColumnName[4].getText().equals("Rank")) {
-                overlay.update(ClanMateExportOverlay.WhatToShow.CHECK_COLUMNS_RANKED);
-                return;
-            }
-        }
+		if (rightColumnName != null)
+		{
+			if (!rightColumnName[4].getText().equals("Joined"))
+			{
+				clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.CHECK_COLUMNS_JOINED);
+				return;
+			}
 
-        Widget[] rightColumnName = Objects.requireNonNull(this.client.getWidget(693, 8)).getChildren();
+		}
 
-        if (rightColumnName != null) {
-            if (!rightColumnName[4].getText().equals("Joined")) {
-                overlay.update(ClanMateExportOverlay.WhatToShow.CHECK_COLUMNS_JOINED);
-                return;
-            }
+		if (clanMemberNamesWidget == null || rankWidget == null || joinedWidget == null)
+		{
+			return;
+		}
+		Widget[] clanMemberNamesWidgetValues = clanMemberNamesWidget.getChildren();
+		Widget[] rankWidgetValues = rankWidget.getChildren();
+		Widget[] joinedWidgetValues = joinedWidget.getChildren();
 
-        }
+		if (clanMemberNamesWidgetValues == null || rankWidgetValues == null || joinedWidgetValues == null)
+		{
+			return;
+		}
+		//Scrape all clan members
 
-        if (clanMemberNamesWidget == null || rankWidget == null || joinedWidget == null) {
-            return;
-        }
-        Widget[] clanMemberNamesWidgetValues = clanMemberNamesWidget.getChildren();
-        Widget[] rankWidgetValues = rankWidget.getChildren();
-        Widget[] joinedWidgetValues = joinedWidget.getChildren();
-
-        if (clanMemberNamesWidgetValues == null || rankWidgetValues == null || joinedWidgetValues == null) {
-            return;
-        }
-        //Scrape all clan members
-
-        int lastSuccessfulRsnIndex = 0;
-        int otherColumnsPositions = 0;
-        for (int i = 0; i < clanMemberNamesWidgetValues.length; i++) {
-            int valueOfRsnToGet;
-            if (i == 0) {
-                valueOfRsnToGet = 1;
-            } else {
-                valueOfRsnToGet = lastSuccessfulRsnIndex + 3;
-            }
-            boolean inBounds = (valueOfRsnToGet >= 0) && (valueOfRsnToGet < clanMemberNamesWidgetValues.length);
-            if (inBounds) {
+		int lastSuccessfulRsnIndex = 0;
+		int otherColumnsPositions = 0;
+		for (int i = 0; i < clanMemberNamesWidgetValues.length; i++)
+		{
+			int valueOfRsnToGet;
+			if (i == 0)
+			{
+				valueOfRsnToGet = 1;
+			}
+			else
+			{
+				valueOfRsnToGet = lastSuccessfulRsnIndex + 3;
+			}
+			boolean inBounds = (valueOfRsnToGet >= 0) && (valueOfRsnToGet < clanMemberNamesWidgetValues.length);
+			if (inBounds)
+			{
 				int clanMemberCount = Objects.requireNonNull(this.client.getClanSettings()).getMembers().size();
-                int otherColumnsIndex = otherColumnsPositions + clanMemberCount;
-                String rsn = Text.removeTags(clanMemberNamesWidgetValues[valueOfRsnToGet].getText());
-                String rank = Text.removeTags(rankWidgetValues[otherColumnsIndex].getText());
-                String joinedDate = Text.removeTags(joinedWidgetValues[otherColumnsIndex].getText());
-                ClanMemberMap clanMember = new ClanMemberMap(rsn, rank, joinedDate);
-                this.clanMembers.add(clanMember);
-                lastSuccessfulRsnIndex = valueOfRsnToGet;
-                otherColumnsPositions++;
-            }
-        }
+				int otherColumnsIndex = otherColumnsPositions + clanMemberCount;
+				String rsn = Text.removeTags(clanMemberNamesWidgetValues[valueOfRsnToGet].getText());
+				String rank = Text.removeTags(rankWidgetValues[otherColumnsIndex].getText());
+				String joinedDate = Text.removeTags(joinedWidgetValues[otherColumnsIndex].getText());
+				ClanMemberMap clanMember = new ClanMemberMap(rsn, rank, joinedDate);
+				this.clanMembers.add(clanMember);
+				lastSuccessfulRsnIndex = valueOfRsnToGet;
+				otherColumnsPositions++;
+			}
+		}
 
+	}
 
-        if (this.config.exportToClipBoard()) {
-            String clipBoardString = "";
+	public void ClanToClipBoard()
+	{
 
-            switch (this.config.getDataExportFormat()) {
-                case JSON:
-                    clipBoardString = toJson(this.clanMembers);
-                    break;
-                case CSV:
-                    clipBoardString = toCSV(this.clanMembers);
-                    break;
+		this.scrapeMembers();
 
-            }
+		if (this.config.exportToClipBoard())
+		{
+			String clipBoardString = "";
 
-            this.clanMembersToClipBoard(clipBoardString);
-            overlay.update(ClanMateExportOverlay.WhatToShow.SUCCESS);
-        }
+			switch (this.config.getDataExportFormat())
+			{
+				case JSON:
+					clipBoardString = toJson(this.clanMembers);
+					break;
+				case CSV:
+					clipBoardString = toCSV(this.clanMembers);
+					break;
 
-        if (this.config.getSendWebRequest()) {
-            this.sendClanMembersToUrl();
-        }
+			}
 
-    }
+			this.clanMembersToClipBoard(clipBoardString);
+			clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.SUCCESS);
+		}
+	}
 
-    /**
-     * Creates a csv string from clan members
-     *
-     * @param clanMemberMaps Clan members info
-     * @return csv with clan members info
-     */
-    private String toCSV(List<ClanMemberMap> clanMemberMaps) {
-        String result = "";
+	/**
+	 * Creates a csv string from clan members
+	 *
+	 * @param clanMemberMaps Clan members info
+	 * @return csv with clan members info
+	 */
+	private String toCSV(List<ClanMemberMap> clanMemberMaps)
+	{
+		String result = "";
 
-        StringBuilder sb = new StringBuilder();
+		StringBuilder sb = new StringBuilder();
 
-        for (ClanMemberMap clanMember : clanMemberMaps) {
-            sb.append(clanMember.getRSN()).append(",");
-            if (!this.config.getExportUserNamesOnly()) {
-                sb.append(clanMember.getRank()).append(",");
-                sb.append(clanMember.getJoinedDate());
-            }
+		for (ClanMemberMap clanMember : clanMemberMaps)
+		{
+			sb.append(clanMember.getRSN()).append(",");
+			if (!this.config.getExportUserNamesOnly())
+			{
+				sb.append(clanMember.getRank()).append(",");
+				sb.append(clanMember.getJoinedDate());
+			}
 
-            sb.append("\n");
-        }
+			sb.append("\n");
+		}
 
-        result = sb.deleteCharAt(sb.length() - 1).toString();
+		result = sb.deleteCharAt(sb.length() - 1).toString();
 
-        return result;
-    }
+		return result;
+	}
 
-    private String toJson(List<ClanMemberMap> clanMemberMaps) {
-        return GSON.toJson(clanMemberMaps);
-    }
+	private String toJson(List<ClanMemberMap> clanMemberMaps)
+	{
+		return GSON.toJson(clanMemberMaps);
+	}
 
-    /**
-     * Exports clanmembers to clip board
-     */
-    private void clanMembersToClipBoard(String clipboardString) {
-        StringSelection stringSelection = new StringSelection(clipboardString);
-        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        clipboard.setContents(stringSelection, null);
-    }
+	/**
+	 * Exports clanmembers to clip board
+	 */
+	private void clanMembersToClipBoard(String clipboardString)
+	{
+		if(this.clanMembers.size() != 0)
+		{
+			StringSelection stringSelection = new StringSelection(clipboardString);
+			Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+			clipboard.setContents(stringSelection, null);
+		}
+	}
 
-    private void sendClanMembersToUrl() {
+	/**
+	 * Exports clanmembers to remote url
+	 *
+	 * @return
+	 */
+	public void SendClanMembersToUrl()
+	{
+		this.scrapeMembers();
+		if(this.clanMembers.size() != 0)
+		{
+			try
+			{
+				String clanName = Objects.requireNonNull(this.client.getClanSettings()).getName();
+				ClanMateExportWebRequestModel webRequestModel = new ClanMateExportWebRequestModel(clanName, this.clanMembers);
 
-        try {
-			String clanName = Objects.requireNonNull(this.client.getClanSettings()).getName();
-            ClanMateExportWebRequestModel webRequestModel = new ClanMateExportWebRequestModel(clanName, this.clanMembers);
+				final Request request = new Request.Builder()
+					.post(RequestBody.create(JSON, GSON.toJson(webRequestModel)))
+					.url(config.getDataUrl())
+					.build();
 
-            final Request request = new Request.Builder()
-                    .post(RequestBody.create(JSON, GSON.toJson(webRequestModel)))
-                    .url(config.getDataUrl())
-                    .build();
-
-            RuneLiteAPI.CLIENT.newCall(request).enqueue(new Callback() {
-                @Override
-                public void onFailure(Call call, IOException e) {
-                    overlay.update(ClanMateExportOverlay.WhatToShow.WEB_REQUEST_FAILED);
-                }
-
-                @Override
-                public void onResponse(Call call, Response response) throws IOException {
-                	if(response.isSuccessful()){
-						overlay.update(ClanMateExportOverlay.WhatToShow.SUCCESS);
-					}else{
-						overlay.update(ClanMateExportOverlay.WhatToShow.WEB_REQUEST_FAILED);
+				webClient.newCall(request).enqueue(new Callback()
+				{
+					@Override
+					public void onFailure(Call call, IOException e)
+					{
+						clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.WEB_REQUEST_FAILED);
 					}
 
-                }
-            });
-        } catch (Exception e) {
-			overlay.update(ClanMateExportOverlay.WhatToShow.WEB_REQUEST_FAILED);
+					@Override
+					public void onResponse(Call call, Response response) throws IOException
+					{
+						if (response.isSuccessful())
+						{
+							clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.SUCCESS);
+						}
+						else
+						{
+							clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.WEB_REQUEST_FAILED);
+						}
 
-        }
+					}
+				});
+			}
+			catch (Exception e)
+			{
+				clanMateExportChatMenuManager.update(ClanMateExportChatMenuManager.WhatToShow.WEB_REQUEST_FAILED);
 
-
-    }
+			}
+		}
+	}
 }
